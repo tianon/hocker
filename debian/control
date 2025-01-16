@@ -1,0 +1,23 @@
+Source: hocker
+Section: admin
+Priority: optional
+Maintainer: Tianon Gravi <tianon@debian.org>
+Build-Depends: debhelper-compat (= 13)
+Rules-Requires-Root: no
+Homepage: https://github.com/infosiftr/hocker
+Vcs-Browser: https://github.com/tianon/hocker/tree/debian/debian
+Vcs-Git: https://github.com/tianon/hocker.git
+
+Package: hocker
+Architecture: all
+Depends: bash, util-linux, ${misc:Depends}, ${shlibs:Depends}
+Recommends: moby-cli | docker-ce-cli | docker-cli
+Suggests: moby-engine | docker-ce | docker.io
+Description: "Hacky [Docker] shell scripts" legitimised
+ "Hocker" is a Docker wrapper for "hacky shell script deployment".
+ .
+ Deploying code via hacky shell scripts, while not desirable, works OK for many
+ use cases (simple nginx+wordpress+mysql deployments, for example).
+ .
+ The primary goal of Hocker is to simplify those hacky shell scripts, thus
+ making them less error prone, while also adding new and improved functionality.
