@@ -154,19 +154,20 @@ fi
 
 hocker_run() {
 	local opts
-	if ! opts="$(getopt -o '+' --long 'name:,build:,build-arg:,platform:' -- "$@")"; then
+	if ! opts="$(getopt -o '+' --long 'name:,build:,buildx:,build-arg:,platform:' -- "$@")"; then
 		panic 'hocker_run getopt failed' # getopt already put an error to stderr like: getopt: unrecognized option '--wtf'
 	fi
 	eval set -- "$opts"
 
-	local containerName="$scriptName" buildDir= buildDockerfile= buildArgs=() platform=
+	local containerName="$scriptName" buildDir= buildDockerfile= buildArgs=() buildx= platform=
 	while true; do
 		local flag="$1"
 		shift
 		case "$flag" in
 			# --redeploy-hook ? (for HUP nginx, etc)
 			--name) containerName="$1" && shift ;;
-			--build) buildDir="$1" && shift ;;
+			--build) buildDir="$1" && buildx= && shift ;;
+			--buildx) buildDir="$1" && buildx=1 && shift ;;
 			--build-arg) buildArgs+=( "$1" ) && shift ;;
 			--platform) platform="$1" && shift ;;
 			--) break ;;
@@ -330,10 +331,11 @@ hocker_run() {
 			buildArgs+=( --platform "$platform" )
 		fi
 		if [ -n "$buildDockerfile" ]; then
-			docker build "${buildArgs[@]}" - <<<"$buildDockerfile"
+			buildArgs+=( - )
 		else
-			docker build "${buildArgs[@]}" "$buildDir"
+			buildArgs+=( "$buildDir" )
 		fi
+		DOCKER_BUILDKIT="${buildx:-0}" docker ${buildx:+buildx} build "${buildArgs[@]}" <<<"$buildDockerfile"
 	elif [ -n "$buildDir" ]; then
 		echo
 		echo "Not building '$imageName' (--build '$build')"
