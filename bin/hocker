@@ -159,7 +159,7 @@ hocker_run() {
 	fi
 	eval set -- "$opts"
 
-	local containerName="$scriptName" buildDir= buildArgs=() platform=
+	local containerName="$scriptName" buildDir= buildDockerfile= buildArgs=() platform=
 	while true; do
 		local flag="$1"
 		shift
@@ -175,7 +175,11 @@ hocker_run() {
 	done
 
 	if [ -n "$buildDir" ]; then
-		[ -d "$buildDir" ] || script_error "--build specified but '$buildDir' is not a directory"
+		if [ -s "$buildDir" ] || [[ "$buildDir" == /dev/fd/* ]]; then
+			buildDockerfile="$(< "$buildDir")"
+		elif [ ! -d "$buildDir" ]; then
+			script_error "--build specified but '$buildDir' is not a directory"
+		fi
 	fi
 	if [ "${#buildArgs[@]}" -gt 0 ] && [ -z "$buildDir" ]; then
 		script_error "--build-arg specified but '--build' was not"
@@ -249,16 +253,37 @@ hocker_run() {
 			*) script_error "unrecognized value for --build '$build'" ;;
 		esac
 		buildFroms="$(
-			awk '
-				toupper($1) == "FROM" { print $2 }
+			if [ -n "$buildDockerfile" ]; then
+				exec <<<"$buildDockerfile"
+			else
+				exec < "$buildDir/Dockerfile"
+			fi
+			gawk '
+				function printfrom(from, as) {
+					if (asmap[from]) {
+						from = asmap[from]
+					}
+					if (as) {
+						asmap[as] = from
+					}
+					print from
+				}
+				toupper($1) == "FROM" {
+					if (toupper($3) == "AS") {
+						printfrom($2, $4)
+					} else {
+						printfrom($2)
+					}
+				}
 				toupper($1) == "COPY" {
 					for (i = 2; i < NF; i++) {
 						if ($i !~ /^--/) { break }
-						if ($i ~ /^--from=/) { gsub(/^--from=/, "", $i); print $i }
+						if ($i ~ /^--from=/) { gsub(/^--from=/, "", $i); printfrom($i) } # TODO also handle --from=0 etc
 					}
 				}
-			' "$buildDir/Dockerfile"
+			'
 		)"
+		buildFroms="$(sort <<<"$buildFroms" -u)"
 		# reset "alwaysPull" and "missingImages" since if we're supposed to build $imageName, we shouldn't ever pull $imageName
 		alwaysPull=(); missingImages=()
 		for buildFrom in $buildFroms; do
@@ -284,6 +309,9 @@ hocker_run() {
 
 	if [ "${#doPull[@]}" -gt 0 ]; then
 		for imageToPull in "${doPull[@]}"; do
+			if [ "$imageToPull" = 'scratch' ]; then
+				continue
+			fi
 			echo "Pulling '$imageToPull' ..."
 			local pullArgs=( "$imageToPull" )
 			if [ -n "$platform" ]; then
@@ -301,8 +329,11 @@ hocker_run() {
 		if [ -n "$platform" ]; then
 			buildArgs+=( --platform "$platform" )
 		fi
-		buildArgs+=( "$buildDir" )
-		docker build "${buildArgs[@]}"
+		if [ -n "$buildDockerfile" ]; then
+			docker build "${buildArgs[@]}" - <<<"$buildDockerfile"
+		else
+			docker build "${buildArgs[@]}" "$buildDir"
+		fi
 	elif [ -n "$buildDir" ]; then
 		echo
 		echo "Not building '$imageName' (--build '$build')"
